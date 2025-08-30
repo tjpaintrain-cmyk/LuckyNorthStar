@@ -1,0 +1,160 @@
+generator client { provider = "prisma-client-js" }
+datasource db  { provider = "postgresql"; url = env("DATABASE_URL") }
+
+enum Currency { GC SC }
+enum WalletSubtype { AVAILABLE ESCROW BONUS }
+enum EntryDir { DEBIT CREDIT }
+enum TxType {
+  GC_PURCHASE GC_REFUND
+  GRANT_SC GRANT_GC
+  WAGER START_SETTLE WIN LOSS
+  REDEMPTION_LOCK REDEMPTION_PAID REDEMPTION_REVERT
+  BONUS_ISSUE BONUS_EXPIRE
+}
+
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  passwordHash String?
+  createdAt   DateTime @default(now())
+  status      String   @default("ACTIVE")
+  profile     Profile?
+  wallets     Wallet[]
+  sessions    Session[]
+  kycCases    KycCase[]
+  purchases   Purchase[]
+  redemptions Redemption[]
+  gameRounds  GameRound[]
+}
+
+model Profile {
+  userId   String @id
+  user     User   @relation(fields: [userId], references: [id])
+  displayName String?
+  dob      DateTime
+  country  String
+  state    String?
+  address1 String?
+  city     String?
+  postal   String?
+  createdAt DateTime @default(now())
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  jti       String   @unique
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  deviceFP  String?
+}
+
+model KycCase {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  provider  String
+  status    String
+  reason    String?
+  resultJson Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Wallet {
+  id        String   @id @default(cuid())
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    String?
+  currency  Currency
+  subtype   WalletSubtype
+  balance   Decimal  @db.Decimal(20,6) @default(0)
+  @@unique([userId, currency, subtype])
+}
+
+model Transaction {
+  id        String   @id @default(cuid())
+  type      TxType
+  idempotencyKey String? @unique
+  metadata  Json?
+  createdAt DateTime @default(now())
+  entries   Entry[]
+}
+
+model Entry {
+  id        String   @id @default(cuid())
+  transaction Transaction @relation(fields:[transactionId], references:[id])
+  transactionId String
+  wallet    Wallet   @relation(fields:[walletId], references:[id])
+  walletId  String
+  direction EntryDir
+  amount    Decimal  @db.Decimal(20,6)
+  @@index([transactionId])
+}
+
+model Purchase {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  stripePI  String   @unique
+  status    String
+  amountUsd Decimal  @db.Decimal(12,2)
+  gcAmount  Decimal  @db.Decimal(20,6)
+  createdAt DateTime @default(now())
+}
+
+model Redemption {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  amountSc  Decimal  @db.Decimal(20,6)
+  status    String
+  payoutRef String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Game {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  type      String
+  name      String
+  rtp       Decimal  @db.Decimal(5,2)
+  volatility String
+  config    Json
+}
+
+model GameRound {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  game      Game     @relation(fields: [gameId], references: [id])
+  gameId    String
+  currency  Currency
+  wager     Decimal  @db.Decimal(20,6)
+  payout    Decimal  @db.Decimal(20,6) @default(0)
+  state     String
+  clientSeed String
+  serverSeedHash String
+  serverSeedRevealedAt DateTime?
+  nonce     Int
+  outcome   Json
+  createdAt DateTime @default(now())
+  @@index([currency, state, createdAt])
+  @@index([userId, createdAt])
+}
+
+model RNGSeed {
+  id        String   @id @default(cuid())
+  userId    String?
+  serverSeed String
+  serverSeedHash String @unique
+  active    Boolean @default(true)
+  rotatedAt DateTime @default(now())
+}
+
+model Promotion { id String @id @default(cuid()); slug String @unique; rules Json; active Boolean @default(false); startsAt DateTime?; endsAt DateTime? }
+model Referral  { id String @id @default(cuid()); referrerUserId String; refereeUserId String; status String; createdAt DateTime @default(now()) }
+model CMSPage   { id String @id @default(cuid()); slug String @unique; title String; markdown String; updatedAt DateTime @updatedAt }
+model Ban       { id String @id @default(cuid()); userId String; reason String; scope String; expiresAt DateTime?; createdAt DateTime @default(now()) }
+model AuditLog  { id String @id @default(cuid()); actorUserId String?; actorKind String; action String; entity String; entityId String; diff Json?; ip String?; createdAt DateTime @default(now()) }
